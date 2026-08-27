@@ -35,15 +35,34 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve frontend static build if present
-const clientDistPath = path.join(__dirname, '../../client/dist');
-if (fs.existsSync(clientDistPath)) {
+// Helper to resolve client dist across all hosting directory structures
+function getClientDistPath() {
+  const possiblePaths = [
+    path.join(__dirname, '../../client/dist'),
+    path.join(__dirname, '../client/dist'),
+    path.resolve(process.cwd(), 'client/dist'),
+    path.resolve(process.cwd(), '../client/dist'),
+    path.join(process.cwd(), 'dist')
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html'))) {
+      return p;
+    }
+  }
+  return null;
+}
+
+const clientDistPath = getClientDistPath();
+if (clientDistPath) {
+  console.log(`📦 Serving frontend static assets from: ${clientDistPath}`);
   app.use(express.static(clientDistPath));
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(clientDistPath, 'index.html'));
     }
   });
+} else {
+  console.warn('⚠️ client/dist directory not found. Serving API only.');
 }
 
 // Start Server
