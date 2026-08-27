@@ -183,17 +183,151 @@ router.get('/mandates/:id/history', (req, res) => {
       ORDER BY c.attempted_at ASC
     `).all(id);
 
-    // Audit Log Entries
+    // Audit Log Entries (match either mandate_id or charge_attempt_id)
     const auditLogs = db.prepare(`
       SELECT * FROM audit_log_entries
-      WHERE mandate_id = ?
+      WHERE mandate_id = ? OR charge_attempt_id IN (SELECT id FROM charge_attempts WHERE mandate_id = ?)
       ORDER BY timestamp ASC
-    `).all(id);
+    `).all(id, id);
 
     res.json({
       mandate,
       charges,
       auditLogs
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Single Mandate On-Demand Recovery
+router.post('/mandates/:id/recover', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = getDb();
+
+    const charge = db.prepare(`
+      SELECT
+        c.id, c.mandate_id, c.amount, c.attempted_at, c.status, c.failure_code, c.raw_bank_response,
+        m.customer_id, m.merchant_id, m.status as mandate_status, m.max_amount, m.attempts_used_this_cycle, m.consecutive_timeouts,
+        cust.name as customer_name, cust.phone as customer_phone, cust.vpa as customer_vpa,
+        merch.name as merchant_name, merch.category as merchant_category
+      FROM charge_attempts c
+      JOIN mandates m ON c.mandate_id = m.id
+      JOIN customers cust ON m.customer_id = cust.id
+      JOIN merchants merch ON m.merchant_id = merch.id
+      WHERE m.id = ?
+      ORDER BY c.attempted_at DESC
+      LIMIT 1
+    `).get(id);
+
+    if (!charge) {
+      return res.status(404).json({ error: 'No charge attempt found for this mandate' });
+    }
+
+    // 1. Diagnose
+    const diagnosis = await diagnoseFailure(charge.failure_code, charge.raw_bank_response);
+    const diagnosisId = `diag_${Date.now()}`;
+
+    db.prepare(`
+      INSERT OR REPLACE INTO failure_diagnoses (id, charge_attempt_id, root_cause, confidence, reasoning, classifier_type)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      diagnosisId,
+      charge.id,
+      diagnosis.root_cause,
+      diagnosis.confidence,
+      diagnosis.reasoning,
+      diagnosis.classifier_type
+    );
+
+    // 2. Decide Policy
+    const policyDecision = evaluatePolicyDecision({
+      diagnosis,
+      mandate: {
+        id: charge.mandate_id,
+        status: charge.mandate_status,
+        attempts_used_this_cycle: charge.attempts_used_this_cycle,
+        consecutive_timeouts: charge.consecutive_timeouts
+      },
+      chargeAttempt: charge
+    });
+
+    // 3. Nudge
+    let messageText = null;
+    if (policyDecision.message_required) {
+      messageText = await generateHinglishNudge({
+        customerName: charge.customer_name,
+        merchantName: charge.merchant_name,
+        amount: charge.amount,
+        rootCause: diagnosis.root_cause,
+        mandateId: charge.mandate_id
+      });
+    }
+
+    // 4. Simulate Action
+    const { simulateActionOutcome } = await import('../services/executionSimulator.js');
+    const outcome = simulateActionOutcome({
+      actionType: policyDecision.action_type,
+      rootCause: diagnosis.root_cause,
+      amount: charge.amount,
+      guardrailCheck: policyDecision.guardrail_check
+    });
+
+    const actionId = `act_${Date.now()}`;
+    db.prepare(`
+      INSERT OR REPLACE INTO recovery_actions (id, failure_diagnosis_id, mandate_id, action_type, scheduled_at, message_text, policy_rule_id, status, simulated_recovery_amount, executed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      actionId,
+      diagnosisId,
+      charge.mandate_id,
+      policyDecision.action_type,
+      policyDecision.scheduled_at,
+      messageText,
+      policyDecision.policy_rule_id,
+      outcome.status,
+      outcome.recovered_amount,
+      new Date().toISOString()
+    );
+
+    // 5. Audit Log
+    const auditReasoning = narrateAuditReasoning({
+      actionType: policyDecision.action_type,
+      rootCause: diagnosis.root_cause,
+      confidence: diagnosis.confidence,
+      attemptsUsed: charge.attempts_used_this_cycle,
+      maxAllowedAttempts: 3,
+      guardrailStatus: policyDecision.guardrail_check,
+      scheduledTime: policyDecision.scheduled_at
+    });
+
+    const auditId = `aud_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO audit_log_entries (id, mandate_id, charge_attempt_id, related_entity_id, entity_type, decision, reasoning, policy_rule_id, guardrail_check, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      auditId,
+      charge.mandate_id,
+      charge.id,
+      actionId,
+      'RECOVERY_DECISION',
+      `${policyDecision.action_type.toUpperCase()} (${policyDecision.policy_rule_id})`,
+      auditReasoning,
+      policyDecision.policy_rule_id,
+      policyDecision.guardrail_check,
+      new Date().toISOString()
+    );
+
+    db.prepare('UPDATE charge_attempts SET is_processed = 1 WHERE id = ?').run(charge.id);
+
+    res.json({
+      success: true,
+      diagnosis,
+      policyDecision,
+      outcome,
+      auditReasoning,
+      messageText
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

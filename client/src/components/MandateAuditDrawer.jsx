@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, ShieldCheck, CheckCircle2, AlertTriangle, MessageSquare, Clock, Cpu, FileText, ChevronRight, Send, ArrowRight } from 'lucide-react';
+import { X, ShieldCheck, CheckCircle2, AlertTriangle, MessageSquare, Clock, Cpu, FileText, ChevronRight, Send, ArrowRight, Play, RefreshCw, Copy, Check } from 'lucide-react';
 
-export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
+export default function MandateAuditDrawer({ mandateId, isOpen, onClose, onRefresh }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!mandateId || !isOpen) return;
-
+  const fetchHistory = () => {
+    if (!mandateId) return;
     setLoading(true);
     fetch(`/api/mandates/${mandateId}/history`)
       .then((res) => res.json())
@@ -19,19 +20,48 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
         console.error('Failed to load mandate history:', err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    if (mandateId && isOpen) {
+      fetchHistory();
+    }
   }, [mandateId, isOpen]);
+
+  const handleRunSingleRecovery = async () => {
+    if (!mandateId) return;
+    setExecuting(true);
+    try {
+      const res = await fetch(`/api/mandates/${mandateId}/recover`, { method: 'POST' });
+      const result = await res.json();
+      console.log('Single recovery result:', result);
+      fetchHistory();
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Error running single recovery:', err);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const handleCopyAudit = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   if (!isOpen) return null;
 
   const mandate = data?.mandate;
   const latestCharge = data?.charges?.[0];
   const auditLogs = data?.auditLogs || [];
+  const isPending = !latestCharge?.root_cause || auditLogs.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/70 backdrop-blur-sm flex justify-end">
       <div className="w-full max-w-2xl bg-[#0B1324] border-l border-slate-800 h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
         {/* Drawer Header */}
-        <div className="p-6 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
           <div>
             <div className="flex items-center space-x-2">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -39,28 +69,50 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
               </span>
               <span className="text-xs text-slate-400 font-mono">{mandateId}</span>
             </div>
-            <h3 className="text-xl font-bold text-white mt-1">
+            <h3 className="text-lg font-bold text-white mt-1">
               {mandate?.customer_name} &bull; <span className="text-blue-400">{mandate?.merchant_name}</span>
             </h3>
           </div>
 
-          <button
-            onClick={onClose}
-            className="h-8 w-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {isPending && (
+              <button
+                onClick={handleRunSingleRecovery}
+                disabled={executing}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-blue-600/30 transition flex items-center space-x-1.5"
+              >
+                {executing ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    <span>Run AI Loop</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="h-8 w-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Drawer Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
-              <Clock className="h-5 w-5 animate-spin mr-2 text-blue-400" />
+            <div className="flex items-center justify-center py-20 text-slate-400 text-xs">
+              <Clock className="h-4 w-4 animate-spin mr-2 text-blue-400" />
               Loading compliance audit history...
             </div>
           ) : !mandate ? (
-            <div className="text-slate-400 text-center py-10">Mandate data not found.</div>
+            <div className="text-slate-400 text-center py-10 text-xs">Mandate data not found.</div>
           ) : (
             <>
               {/* Summary Metadata Card */}
@@ -97,9 +149,16 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
 
               {/* 5-STEP EXPLAINABLE RECOVERY LOOP */}
               <div className="space-y-4">
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-400">
-                  Explainable Decision Trail (5-Stage Loop)
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-400">
+                    Explainable Decision Trail (5-Stage Loop)
+                  </h4>
+                  {isPending && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Pending Batch Run
+                    </span>
+                  )}
+                </div>
 
                 {/* Step 1: Detect & Ingest */}
                 <div className="relative pl-6 pb-6 border-l-2 border-blue-500/40 last:border-l-0">
@@ -108,14 +167,12 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white flex items-center space-x-1.5">
-                        <span>Stage 1: Detect & Ingest</span>
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-mono">₹{latestCharge?.amount} Debit Failed</span>
+                      <span className="text-xs font-bold text-white">Stage 1: Detect & Ingest</span>
+                      <span className="text-[11px] text-white font-bold font-mono">₹{latestCharge?.amount} Debit Failed</span>
                     </div>
                     <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-xs space-y-1">
                       <div className="text-amber-300 font-semibold">
-                        Raw Failure Code: "{latestCharge?.failure_code}"
+                        Raw Bank Code: "{latestCharge?.failure_code}"
                       </div>
                       <div className="text-slate-400 text-[11px] truncate">
                         Bank Payload: {latestCharge?.raw_bank_response}
@@ -131,31 +188,37 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">
-                        Stage 2: Diagnose Root Cause
-                      </span>
+                      <span className="text-xs font-bold text-white">Stage 2: Diagnose Root Cause</span>
                       <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        {latestCharge?.classifier_type}
+                        {latestCharge?.classifier_type || 'RULE + AI ENGINE'}
                       </span>
                     </div>
-                    <div className="flex items-center space-x-3 text-xs">
-                      <div>
-                        <span className="text-slate-400">Diagnosed Cause: </span>
-                        <span className="font-bold text-amber-300 capitalize">
-                          {latestCharge?.root_cause?.replace('_', ' ')}
-                        </span>
+                    {latestCharge?.root_cause ? (
+                      <>
+                        <div className="flex items-center space-x-3 text-xs">
+                          <div>
+                            <span className="text-slate-400">Diagnosed Cause: </span>
+                            <span className="font-bold text-amber-300 capitalize">
+                              {latestCharge?.root_cause?.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="h-3 w-px bg-slate-700" />
+                          <div>
+                            <span className="text-slate-400">Confidence: </span>
+                            <span className="font-mono text-emerald-400 font-bold">
+                              {Math.round((latestCharge?.confidence || 0.9) * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80 italic">
+                          "{latestCharge?.diagnosis_reasoning}"
+                        </p>
+                      </>
+                    ) : (
+                      <div className="text-xs text-slate-400 italic">
+                        Pending agent diagnosis. Click "Run AI Loop" above to classify.
                       </div>
-                      <div className="h-3 w-px bg-slate-700" />
-                      <div>
-                        <span className="text-slate-400">Confidence: </span>
-                        <span className="font-mono text-emerald-400 font-bold">
-                          {Math.round((latestCharge?.confidence || 0.9) * 100)}%
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80 italic">
-                      "{latestCharge?.diagnosis_reasoning}"
-                    </p>
+                    )}
                   </div>
                 </div>
 
@@ -166,21 +229,29 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">
-                        Stage 3: Policy Decision & Guardrails
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                        {latestCharge?.policy_rule_id}
-                      </span>
+                      <span className="text-xs font-bold text-white">Stage 3: Policy Decision & Guardrails</span>
+                      {latestCharge?.policy_rule_id && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                          {latestCharge?.policy_rule_id}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-950/60 border border-slate-800">
-                      <span className="text-slate-300">Action Picked:</span>
-                      <span className="font-semibold text-cyan-300 uppercase">{latestCharge?.action_type}</span>
-                    </div>
-                    <div className="flex items-center space-x-2 text-xs text-emerald-400">
-                      <ShieldCheck className="h-4 w-4 shrink-0" />
-                      <span>NPCI Attempt Ceiling & Lifecycle Guardrail Verified</span>
-                    </div>
+                    {latestCharge?.action_type ? (
+                      <>
+                        <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+                          <span className="text-slate-300">Action Picked:</span>
+                          <span className="font-semibold text-cyan-300 uppercase">{latestCharge?.action_type?.replace('_', ' ')}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-xs text-emerald-400">
+                          <ShieldCheck className="h-4 w-4 shrink-0" />
+                          <span>NPCI Attempt Ceiling & Lifecycle Guardrail Verified</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-slate-400 italic">
+                        Policy evaluation pending.
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -191,23 +262,23 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">
-                        Stage 4: Execution & Outcome
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                        latestCharge?.action_status === 'recovered'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : latestCharge?.action_status === 'blocked_by_guardrail'
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      }`}>
-                        {latestCharge?.action_status}
-                      </span>
+                      <span className="text-xs font-bold text-white">Stage 4: Execution & Outcome</span>
+                      {latestCharge?.action_status && (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          latestCharge?.action_status === 'recovered'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : latestCharge?.action_status === 'blocked_by_guardrail'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {latestCharge?.action_status}
+                        </span>
+                      )}
                     </div>
 
                     {latestCharge?.simulated_recovery_amount > 0 && (
                       <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs text-emerald-300 font-semibold flex items-center justify-between">
-                        <span>Recovered Amount</span>
+                        <span>Recovered Revenue</span>
                         <span className="text-sm font-bold font-mono">₹{latestCharge?.simulated_recovery_amount}</span>
                       </div>
                     )}
@@ -235,24 +306,57 @@ export default function MandateAuditDrawer({ mandateId, isOpen, onClose }) {
                   <div className="absolute -left-2.5 top-0 h-5 w-5 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] font-bold text-white shadow-md">
                     5
                   </div>
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-2">
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white flex items-center space-x-1.5">
                         <FileText className="h-3.5 w-3.5 text-blue-400" />
                         <span>Stage 5: Official Compliance Audit Log</span>
                       </span>
+                      {auditLogs.length > 0 && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">
+                          {auditLogs.length} Verified Log{auditLogs.length > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
-                    {auditLogs.map((log, idx) => (
-                      <div key={idx} className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                          <span className="text-blue-400 font-semibold">{log.decision}</span>
-                          <span>{new Date(log.timestamp).toLocaleTimeString('en-IN')}</span>
-                        </div>
-                        <p className="text-xs text-slate-200 font-sans leading-relaxed">
-                          {log.reasoning}
+
+                    {auditLogs.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
+                        <p className="text-xs text-slate-400">
+                          Compliance audit log will be generated when this failed charge is processed by the AI agent.
                         </p>
+                        <button
+                          onClick={handleRunSingleRecovery}
+                          disabled={executing}
+                          className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition"
+                        >
+                          {executing ? 'Processing...' : 'Run AI Loop on This Charge'}
+                        </button>
                       </div>
-                    ))}
+                    ) : (
+                      auditLogs.map((log, idx) => (
+                        <div key={idx} className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                            <span className="text-blue-400 font-bold">{log.decision}</span>
+                            <span>{new Date(log.timestamp).toLocaleTimeString('en-IN')}</span>
+                          </div>
+                          <p className="text-xs text-slate-200 font-sans leading-relaxed bg-slate-900/40 p-2.5 rounded-lg border border-slate-800/60">
+                            {log.reasoning}
+                          </p>
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[10px] font-mono text-emerald-400 font-medium">
+                              ✓ Guardrail: {log.guardrail_check || 'PASSED'}
+                            </span>
+                            <button
+                              onClick={() => handleCopyAudit(log.reasoning)}
+                              className="text-[10px] text-slate-400 hover:text-white transition flex items-center space-x-1"
+                            >
+                              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                              <span>{copied ? 'Copied' : 'Copy Note'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
