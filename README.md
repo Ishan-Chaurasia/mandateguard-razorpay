@@ -85,20 +85,3 @@ To reset and re-seed 52 realistic UPI Autopay failure records:
 ```bash
 npm run seed
 ```
-
----
-
-## 🎯 5-Minute Pitch & Demo Script (for Judges)
-
-1. **The Hook (30s)**:
-   > "Subscription churn from failed UPI Autopay is a silent multi-crore revenue leak in Indian SaaS, OTT, and D2C. Today merchants either blind-retry—wasting NPCI attempts and risking compliance penalties—or do nothing."
-2. **Live Execution (90s)**:
-   > Click **Run Recovery Agent** on the top bar. Watch the live SSE stream classify 52 failed records across 6 realistic Indian merchants (Netflix, Cult.fit, Zerodha, Swiggy One).
-3. **The Dashboard & Uplift (90s)**:
-   > Show the **+139.6% Revenue Uplift** vs the Naive Retry Baseline card, and point out the **0 NPCI compliance violations** vs 14+ violations in the naive baseline.
-4. **Drill into One Mandate (60s)**:
-   > Click into a mandate row (e.g. `UMN100000022729` for an expired mandate) to showcase the 5-stage explainable audit timeline and the generated **Hinglish WhatsApp Nudge**.
-5. **The AI Sandbox (30s)**:
-   > Switch to the **AI Sandbox** tab and test custom bank failure codes live!
-6. **The Closing Line (30s)**:
-   > "Zero mandates retried past NPCI limits, zero revoked mandates touched, and measured money recovered across the batch."
