@@ -1,0 +1,19 @@
+{
+  "name": "mandateguard-root",
+  "version": "1.0.0",
+  "description": "MandateGuard: AI Revenue Recovery Agent for Failed UPI Autopay / Mandate Charges",
+  "scripts": {
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "recover": "npm --prefix server run recover",
+    "seed": "npm --prefix server run seed",
+    "build": "npm --prefix client run build"
+  },
+  "keywords": ["upi-autopay", "revenue-recovery", "fintech", "razorpay", "ai-agent"],
+  "author": "MandateGuard Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
