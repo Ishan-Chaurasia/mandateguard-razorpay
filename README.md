@@ -22,7 +22,17 @@ $$\text{Detect} \longrightarrow \text{Diagnose} \longrightarrow \text{Decide} \l
 
 Show Image
 
-![MandateGuard Dashboard](docs/dashboard.png)
+<p align="center">
+  <img src="Docs/Dashboard.png" alt="MandateGuard Dashboard Overview" width="800">
+</p>
+
+<p align="center"><em>Overview: bounded agent vs. naive baseline, live compliance stats</em></p>
+
+<p align="center">
+  <img src="Docs/Recovery_Actions.png" alt="Mandates & Recovery Actions" width="800">
+</p>
+
+<p align="center"><em>Mandates & Recovery Actions: per-mandate diagnosis, policy action, and audit trail</em></p>
 
 Live overview showing the bounded agent vs. naive baseline comparison, NPCI compliance status, and the recovery uplift benchmark.
 
