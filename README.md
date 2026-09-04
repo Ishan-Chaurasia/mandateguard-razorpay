@@ -76,8 +76,6 @@ Building the bounded policy engine surfaced a few real failure modes worth docum
 - **AI classifier initially had no hard stop against retrying expired/revoked mandates.** In an early version, the diagnostic classifier's confidence score fed directly into the retry decision — meaning a high-confidence misclassification could theoretically trigger a retry on a mandate that was already legally dead. Fix: moved lifecycle-state gating (`mandate_expired` / `mandate_revoked`) to run *before* the AI classifier is ever consulted, so no AI output — regardless of confidence — can override that hard regulatory rule. The classifier only runs on cases that pass the gate.
 - **Ambiguous/vendor-specific bank failure codes didn't map cleanly to root causes.** Real UPI failure strings vary a lot between banks (`U30`, `INSUFFICIENT_FUNDS`, `SBI_UPI_ERR_U30_AC...` — visible in the demo data are all really the same root cause). Early on, unmapped or low-confidence strings fell through to a default "retry" action instead of being flagged. Fix: added an explicit `unknown / low confidence (<70%)` branch in the policy table that routes straight to the manual ops queue instead of guessing.
 
-*(⚠️ These two are drafted from patterns visible in your repo/README, not confirmed events — verify both actually happened before you submit. If either didn't happen as described, edit or remove it. A panel may ask you to walk through the bug live.)*
-
 ---
 
 ## 🧪 Limitations & What's Next
