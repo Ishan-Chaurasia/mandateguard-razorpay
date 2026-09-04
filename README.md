@@ -18,6 +18,14 @@ $$\text{Detect} \longrightarrow \text{Diagnose} \longrightarrow \text{Decide} \l
 
 > **A note on the numbers below**: All metrics in this README (success rates, recovery %, uplift) are measured against a **synthetic, AI-generated test dataset of 52 UPI Autopay failure records** (see `npm run seed`), not live production data. The seed is currently randomized on each run, so exact figures will vary slightly between reseeds and on the live demo — the numbers below are illustrative of one representative run. What stays constant across every run is the *relative* behavior: MandateGuard's bounded, gated policy consistently beats the naive baseline with zero NPCI/lifecycle violations, regardless of the exact rupee figures on a given seed.
 
+## 📸 Dashboard Preview
+
+Show Image
+
+![MandateGuard Dashboard](docs/dashboard.png)
+
+Live overview showing the bounded agent vs. naive baseline comparison, NPCI compliance status, and the recovery uplift benchmark.
+
 ---
 
 ## 🚀 Key Differentiators & Pitch Proof Points
